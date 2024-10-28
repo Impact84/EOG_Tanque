@@ -1,0 +1,103 @@
+#include <Servo.h>
+
+Servo servoHorizontal;  // Servomotor para control horizontal
+Servo servoVertical;    // Servomotor para control vertical
+
+// Pines de conexión
+int pinSensor = A1;            // Pin analógico para la señal EOG
+int valorSensor = 0;           // Valor de la señal leída
+float valorNormalizado = 0.0;  // Valor normalizado de la señal
+
+// Umbrales de detección (ajusta según tu señal)
+float umbralIzquierda = 700;   // Umbral para movimiento hacia la izquierda
+float umbralDerecha = 1000;    // Umbral para movimiento hacia la derecha
+float umbralArriba = 900;      // Umbral para movimiento hacia arriba
+float umbralAbajo = 600;       // Umbral para movimiento hacia abajo
+
+// Posiciones iniciales de los servos
+int posicionHorizontal = 90;  // Centro del rango horizontal
+int posicionVertical = 90;    // Centro del rango vertical
+
+// Variables para detección de parpadeos
+int contadorParpadeo = 0;
+unsigned long ultimoTiempoParpadeo = 0;
+const unsigned long tiempoLimiteParpadeo = 2000;  // Tiempo límite en milisegundos para contar tres parpadeos
+
+// Variable para activar/desactivar el sistema
+bool sistemaActivo = true;
+
+void setup() {
+  Serial.begin(9600);
+  
+  // Configuración de servos
+  servoHorizontal.attach(2);  // Servo para el movimiento horizontal
+  servoVertical.attach(3);    // Servo para el movimiento vertical
+  servoHorizontal.write(posicionHorizontal);
+  servoVertical.write(posicionVertical);
+}
+
+void loop() {
+  // Si el sistema está desactivado, no hace nada
+  if (!sistemaActivo) {
+    Serial.println("Sistema desactivado");
+    return;
+  }
+  
+  // Leer la señal EOG
+  valorSensor = analogRead(pinSensor);
+  
+  // Normalizar la señal a un rango de 0 a 1023
+  valorNormalizado = map(valorSensor, 0, 1023, 0, 1023);
+  
+  // Verificar dirección del movimiento ocular
+  if (valorNormalizado > umbralDerecha) {
+    // Movimiento hacia la derecha - Ajustar servo horizontal
+    posicionHorizontal = min(posicionHorizontal + 5, 180); // Incrementa posición
+    servoHorizontal.write(posicionHorizontal);
+    Serial.println("Derecha");
+  } else if (valorNormalizado < umbralIzquierda) {
+    // Movimiento hacia la izquierda - Ajustar servo horizontal
+    posicionHorizontal = max(posicionHorizontal - 5, 0); // Decrementa posición
+    servoHorizontal.write(posicionHorizontal);
+    Serial.println("Izquierda");
+  } else if (valorNormalizado > umbralArriba) {
+    // Movimiento hacia arriba - Ajustar servo vertical
+    posicionVertical = max(posicionVertical - 5, 0); // Decrementa posición para elevar el cañón
+    servoVertical.write(posicionVertical);
+    Serial.println("Arriba");
+  } else if (valorNormalizado < umbralAbajo) {
+    // Movimiento hacia abajo - Ajustar servo vertical
+    posicionVertical = min(posicionVertical + 5, 180); // Incrementa posición para bajar el cañón
+    servoVertical.write(posicionVertical);
+    Serial.println("Abajo");
+  } else {
+    // Estado neutral o sin movimiento
+    Serial.println("Centro");
+  }
+  // Control de parpadeo para disparo simulado
+  if (detectarParpadeo(valorSensor)) {
+    // Activa un disparo simulado
+    servoVertical.write(180);  // Simula un disparo elevando el cañón
+    delay(500);                // Mantiene la posición por medio segundo
+    servoVertical.write(90);   // Regresa el servo a la posición neutra
+    Serial.println("Disparo activado");
+    
+    // Incrementa el contador de parpadeos para desactivar el sistema
+    contadorParpadeo++;
+    if (contadorParpadeo == 3 && (millis() - ultimoTiempoParpadeo <= tiempoLimiteParpadeo)) {
+      sistemaActivo = false;  // Desactiva el sistema si se detectan 3 parpadeos en un tiempo corto
+      Serial.println("Sistema desactivado por tres parpadeos consecutivos");
+    }
+    ultimoTiempoParpadeo = millis();  // Actualiza el tiempo del último parpadeo
+  }
+  // Reinicia el contador si pasa el tiempo de espera sin parpadeos adicionales
+  if (millis() - ultimoTiempoParpadeo > tiempoLimiteParpadeo) {
+    contadorParpadeo = 0;
+  }
+  delay(100); // Pequeño retardo para estabilizar la lectura
+}
+// Función para detectar un parpadeo (ajusta los umbrales según la señal)
+bool detectarParpadeo(int valorSensor) {
+  static int umbralParpadeo = 1100; // Umbral de parpadeo (ajusta según la señal)
+  return valorSensor > umbralParpadeo;
+}
